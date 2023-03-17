@@ -13,7 +13,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://www.olis.or.kr/license/Detailselect.do?lId=1006)
 ![Language](https://img.shields.io/badge/python-3.9-blue.svg)
 ![pygame](https://img.shields.io/badge/pygame-2.1.0-important)
-![PySide2](https://img.shields.io/badge/PySide2-5.15.2-important)
+![PySide6](https://img.shields.io/badge/PySide6-6.4.2-important)
 
 테트리미노(like Tetris) 게임입니다. 
 
