@@ -35,7 +35,5 @@
 [**FastAPI**](https://fastapi.tiangolo.com/)와 [**Redis**](https://redis.io/)를 기반으로 하는 온라인 중계 서버입니다. [**Uvicorn**](https://www.uvicorn.org/), **Redis(with [RedisJSON](https://oss.redis.com/redisjson/))** 환경에서 구동됩니다.
 - 웹소켓 기반 클라이언트 연결
 - Redis의 Message Broker 기능을 이용한 Worker-Process 간의 통신
-- 비동기 IO 처리
-- 유연한 Scale-Out
 - JWT 기반 사용자 인증(WIP)
 
