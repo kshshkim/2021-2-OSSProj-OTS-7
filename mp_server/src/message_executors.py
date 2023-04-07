@@ -5,6 +5,7 @@ from . import api_requests
 from queue import Queue
 import threading
 
+
 def build_dict(data_type, data):
     to_return = {
         't': data_type,
@@ -54,23 +55,20 @@ class ServerMsgExecutor:
 
         for val in op_game_data.values():  # 키를 빼고 오브젝트만 전송.
             to_send = build_dict(SERVER_CODES['game_data'], val)
-            print(to_send)  # 디버그용
+            # print(to_send)  # 디버그용
             await user.ws.send_json(to_send)
 
     # 게임 시작 시그널
     async def send_start_signal(self, user: UserInstance):  # 게임 시작과 동시에 유저 객체에 매치 ID와 상대 정보 저장
         user.set_status_in_game()  # in_game 상태
         user.current_match_id = await self.rdm.match_id_get(user.player_id)  # 유저 객체에 매치 아이디 저장
-        user.opponent = await self.rdm.get_opponent(match_id=user.current_match_id, player_id=user.player_id)  # 유저 객체에 상대 아이디 저장
+        user.opponent = await self.rdm.get_opponent(match_id=user.current_match_id,
+                                                    player_id=user.player_id)  # 유저 객체에 상대 아이디 저장
         await self.send_user_code(user, USER_RCODES['game_start'])
 
     # 상대방 게임 오버
     async def op_game_over(self, user: UserInstance):
         await self.send_user_code(user, USER_RCODES['game_over'])
-
-    # async def host_accepted(self, user: UserInstance):  # 당장은 필요 없어서 각주처리
-    #     user.set_status_in_game()
-    #     await self.send_user_code(user, USER_RCODES['host_accepted'])
 
     # 상대가 대결 거절함.
     async def host_rejected(self, user: UserInstance):
@@ -107,7 +105,7 @@ class ServerMsgExecutor:
 
 class UserMsgExecutor:
     def __init__(self, redis_manager: RedisManager):
-        self.rdm = redis_manager
+        self.rdm: RedisManager = redis_manager
         self.api_post_queue = Queue()
         api_t = threading.Thread(target=self.post_req_process, daemon=True)
         api_t.start()
@@ -150,7 +148,7 @@ class UserMsgExecutor:
     # user 게임 오버 신호 수신
     async def game_over(self, user: UserInstance):
         await self.rdm.game_over_user(user.player_id)
-        self.rdm.msg_broker.publish(channel=user.opponent, message=SERVER_CODES['game_over'])
+        await self.rdm.msg_broker.publish(channel=user.opponent, message=SERVER_CODES['game_over'])
         await self.check_match_complete(user)  # 매치 종료 체크
 
     # 매치 종료 체크, 나중에 게임 오버된 쪽 프로세스가 승패 판별
@@ -173,23 +171,23 @@ class UserMsgExecutor:
     async def publish_result(self, winner: str, user: UserInstance):
         for player in [user.player_id, user.opponent]:
             if player == winner:
-                self.rdm.msg_broker.publish(player, SERVER_CODES['winner'])
+                await self.rdm.msg_broker.publish(player, SERVER_CODES['winner'])
                 self.api_post_queue.put(build_dict('winner', player))
             else:
-                self.rdm.msg_broker.publish(player, SERVER_CODES['loser'])
+                await self.rdm.msg_broker.publish(player, SERVER_CODES['loser'])
                 self.api_post_queue.put(build_dict('loser', player))
         await self.rdm.game_session_clear(user.current_match_id)  # 정보 전송 후 레디스에 저장된 세션 정보 삭제
 
     # 에러 발생시 매치 종료 신호
     async def err_match_complete(self, user: UserInstance):
         for player in [user.player_id, user.opponent]:
-            self.rdm.msg_broker.publish(player, SERVER_CODES['match_complete'])
+            await self.rdm.msg_broker.publish(player, SERVER_CODES['match_complete'])
 
     # 대기열 등록
     async def waiting_list_add(self, user: UserInstance):
         if user.status == 'hello':
             await self.rdm.waiting_list_add(user.player_id)
-            self.rdm.msg_broker.publish(WAITING_CHANNEL, '')  # 대기열 업데이트 알림
+            await self.rdm.msg_broker.publish(WAITING_CHANNEL, '')  # 대기열 업데이트 알림
             user.status = 'waiting'
         else:
             print(f'{user.player_id} is not in hello state. {user.status=}')
@@ -198,37 +196,42 @@ class UserMsgExecutor:
     async def waiting_list_remove(self, user: UserInstance):
         if user.status == 'waiting':
             await self.rdm.waiting_list_remove_and_notice(user.player_id)
-            self.rdm.msg_broker.publish(WAITING_CHANNEL, '')
+            await self.rdm.msg_broker.publish(WAITING_CHANNEL, '')
             user.status = 'hello'
         else:
             print(f'{user.player_id} is not in waiting state. {user.status=}')
 
     # 현재 대기열 전송 요청
     async def waiting_list_get(self, user: UserInstance):
-        self.rdm.msg_broker.publish(user.player_id, SERVER_CODES['waiter_list'])
+        await self.rdm.msg_broker.publish(user.player_id, SERVER_CODES['waiter_list'])
 
     # 대결 신청
     async def approach(self, user: UserInstance, waiter_id):
         if user.status == 'hello':  # 기본 상태일때
-            set_ok: bool = await self.rdm.approacher_set(approacher_id=user.player_id, waiter_id=waiter_id)  # 도전자 등록에 성공하면 True 반환, 실패시 False 반환
+            set_ok: bool = await self.rdm.approacher_set(approacher_id=user.player_id,
+                                                         waiter_id=waiter_id)  # 도전자 등록에 성공하면 True 반환, 실패시 False 반환
             if set_ok:
                 user.status = 'approaching'
                 user.approached_to = waiter_id
-                self.rdm.msg_broker.publish(waiter_id, SERVER_CODES['approacher_updated'])  # waiter 에게 approacher 업데이트 사항을 알림
+                await self.rdm.msg_broker.publish(waiter_id, SERVER_CODES[
+                    'approacher_updated'])  # waiter 에게 approacher 업데이트 사항을 알림
             else:
-                self.rdm.msg_broker.publish(user.player_id, SERVER_CODES['host_rejected'])  # 일단은 요청 거절 메시지 전송.
-                print(f'{user.player_id} tried to approach, but failed. The waiter does not exist')  # todo 클라이언트 요청에 대한 에러 전송
+                await self.rdm.msg_broker.publish(user.player_id, SERVER_CODES['host_rejected'])  # 일단은 요청 거절 메시지 전송.
+                print(
+                    f'{user.player_id} tried to approach, but failed. The waiter does not exist')  # todo 클라이언트 요청에 대한 에러 전송
         else:
             print(f'{user.player_id} tried to approach, but failed. \nstatus={user.status} \ntarget={waiter_id}')
 
     # 대결 신청 취소
     async def approach_cancel(self, user: UserInstance):
         if user.status == 'approaching':
-            await self.rdm.approacher_del(user.player_id, user.approached_to)  # todo cancel 요청에 상대 id도 포함시키기 (다중 approach)
+            await self.rdm.approacher_del(user.player_id,
+                                          user.approached_to)  # todo cancel 요청에 상대 id도 포함시키기 (다중 approach)
             user.approached_to = None
             user.status = 'hello'
         else:
-            print(f'invalid cancel request. user is not in approaching status. \n{user.player_id=}\n{user.approached_to}')
+            print(
+                f'invalid cancel request. user is not in approaching status. \n{user.player_id=}\n{user.approached_to}')
 
     # host 요청이 유효한지 판별
     async def is_host_req_valid(self, user: UserInstance, approacher_id):  # host 의 수락, 거절이 유효한지 판별
@@ -241,20 +244,26 @@ class UserMsgExecutor:
     async def host_accept(self, user: UserInstance, approacher_id):
         # redis 에 매치 아이디 저장, 게임 세션 생성, 유저 상태 변경, waiting 리스트에서 유저 제거, 다른 어프로처들에게 거절 신호 보내기, 상대에게 게임 시작 신호 보내기
         if await self.is_host_req_valid(user, approacher_id):
-            await self.rdm.match_id_set(approacher_id=approacher_id, host_id=user.player_id)  # redis 에 매치 아이디 저장 (게임 참여자 모두 조회 가능)
-            await self.rdm.game_session_set(match_id=user.player_id, player1=user.player_id, player2=approacher_id)  # 게임 세션 생성
+            await self.rdm.match_id_set(approacher_id=approacher_id,
+                                        host_id=user.player_id)  # redis 에 매치 아이디 저장 (게임 참여자 모두 조회 가능)
+            await self.rdm.game_session_set(match_id=user.player_id, player1=user.player_id,
+                                            player2=approacher_id)  # 게임 세션 생성
             user.status = 'in_game'  # 유저 상태 변경
-            self.rdm.msg_broker.publish(channel=approacher_id, message=SERVER_CODES['game_start'])  # 수락한 상대에게 게임 시작 신호
-            self.rdm.msg_broker.publish(channel=user.player_id, message=SERVER_CODES['game_start'])  # 플레이어에게 게임 시작 신호
+            await self.rdm.msg_broker.publish(channel=approacher_id,
+                                              message=SERVER_CODES['game_start'])  # 수락한 상대에게 게임 시작 신호
+            await self.rdm.msg_broker.publish(channel=user.player_id,
+                                              message=SERVER_CODES['game_start'])  # 플레이어에게 게임 시작 신호
 
             await self.rdm.waiting_list_remove_and_notice(user.player_id)  # 다른 어프로처들에게 거절 신호 보내기
 
     # 대결 거절.
     async def host_reject(self, user: UserInstance, approacher_id):  # 대결 거절
         if await self.is_host_req_valid(user, approacher_id):
-            self.rdm.msg_broker.publish(channel=approacher_id, message=SERVER_CODES['host_rejected'])  # 거절 신호 publish, sme 쪽에서 상대 유저 상대 상태 변경함.
+            await self.rdm.msg_broker.publish(channel=approacher_id, message=SERVER_CODES[
+                'host_rejected'])  # 거절 신호 publish, sme 쪽에서 상대 유저 상대 상태 변경함.
             await self.rdm.approacher_del(approacher_id, user.player_id)
-            self.rdm.msg_broker.publish(channel=user.player_id, message=SERVER_CODES['approacher_updated'])  # 갱신된 approacher 목록 플레이어에게 전송
+            await self.rdm.msg_broker.publish(channel=user.player_id,
+                                              message=SERVER_CODES['approacher_updated'])  # 갱신된 approacher 목록 플레이어에게 전송
 
     # 클라이언트의 게임 데이터를 레디스에 저장
     async def game_data_in(self, user: UserInstance, data: dict):
@@ -263,4 +272,4 @@ class UserMsgExecutor:
         if user.opponent is None:
             user.opponent = await self.rdm.get_opponent(user.current_match_id, user.player_id)
         await self.rdm.game_session_data_set(user.current_match_id, user.player_id, data)
-        self.rdm.msg_broker.publish(user.opponent, SERVER_CODES['game_data'])
+        await self.rdm.msg_broker.publish(user.opponent, SERVER_CODES['game_data'])

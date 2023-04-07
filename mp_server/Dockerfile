@@ -1,7 +1,9 @@
-FROM tiangolo/uvicorn-gunicorn:python3.9
+FROM python:3.9
 
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+WORKDIR /app
+COPY . .
 
-COPY . /app
-COPY ./run.py /app/main.py
+ENTRYPOINT uvicorn src.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'
+

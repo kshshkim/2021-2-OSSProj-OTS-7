@@ -2,6 +2,8 @@ from fastapi import WebSocket
 
 
 class UserInstance:
+    __slots__ = ("status", "player_id", "ws", "approached_to", "opponent", "current_match_id")
+
     def __init__(self, player_id: str, websocket: WebSocket):
         self.status = 'hello'
         self.player_id = player_id
