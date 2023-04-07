@@ -4,6 +4,6 @@ services:
   ots_server:
     build: .
     ports:
-      - "8000:80"
+      - "8000:8000"
   rj:
-    image: redislabs/rejson
+    image: redis/redis-stack:latest
